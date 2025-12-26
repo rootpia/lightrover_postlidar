@@ -1,0 +1,83 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: LiDAR Data API - API Gateway + Lambda + DynamoDB
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: python3.9
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref LidarDataTable
+
+Resources:
+  # API Gateway
+  LidarApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Cors:
+        AllowMethods: "'POST, GET, OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
+        AllowOrigin: "'*'"
+
+  # Lambda関数
+  LidarDataFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: lambda_handler.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref LidarDataTable
+      Events:
+        PostLidarData:
+          Type: Api
+          Properties:
+            RestApiId: !Ref LidarApi
+            Path: /api/lidar
+            Method: POST
+        GetLidarData:
+          Type: Api
+          Properties:
+            RestApiId: !Ref LidarApi
+            Path: /api/lidar/{robot_id}
+            Method: GET
+
+  # DynamoDBテーブル
+  LidarDataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: LidarData
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: robot_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: N
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: RobotIdTimestampIndex
+          KeySchema:
+            - AttributeName: robot_id
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+Outputs:
+  LidarApiEndpoint:
+    Description: "API Gateway endpoint URL"
+    Value: !Sub "https://${LidarApi}.execute-api.${AWS::Region}.amazonaws.com/prod/api/lidar"
+  
+  LidarDataTableName:
+    Description: "DynamoDB table name"
+    Value: !Ref LidarDataTable
