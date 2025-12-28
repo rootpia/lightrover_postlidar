@@ -11,245 +11,135 @@
 ```
 lightrover_ros/
 ├── scripts/
-│   └── lidar_api_publisher.py    # LiDARデータをAPIにPOSTするノード
+│   ├── lidar_api_publisher.py       # LiDARデータをAPIにPOSTするノード
+│   ├── lidar_api_publisher_lite.py  # データ削減（軽量）版ノード
+│   └── verify_json_fix.py           # 検証用スクリプト
 ├── launch/
-│   ├── lidar_api_publisher.launch    # API送信ノードのみを起動
-│   └── lidar_with_api.launch         # LiDAR + API送信を同時起動
-└── aws/
-    ├── lambda_handler.py              # AWS Lambda関数サンプル
-    └── template.yaml                  # AWS SAMテンプレート
+│   ├── lidar_api_publisher.launch   # API送信ノードのみを起動
+│   └── lidar_with_api.launch        # LiDAR + API送信を同時起動
+├── configuration_files/
+│   ├── config.yaml                  # 設定ファイル（.gitignore対象、要作成）
+│   └── config.sample.yaml           # 設定ファイルサンプル（雛形）
+├── aws/
+│   ├── aws_lambda_handler.py        # AWS Lambda関数サンプル
+│   └── template.yaml                # AWS SAMテンプレート
+├── Dockerfile                       # Docker実行環境定義
+└── docker-compose.yml               # Docker実行構成
 ```
-
-## 必要な依存関係
-
-### ROS側（Raspberry Pi）
-
-```bash
-# Python 2.7用のrequestsライブラリをインストール
-sudo apt-get update
-sudo apt-get install python-pip
-pip install requests
-```
-
-### AWS側
-
-- AWS CLI
-- AWS SAM CLI（デプロイ用）
-- boto3（Lambdaで自動的に利用可能）
 
 ## セットアップ
 
-### 1. ROSパッケージへの追加
+### オプション1: Dockerを使用する場合（推奨）
+
+ROS環境がセットアップされていない場合でも、Dockerを使用して簡単に実行できます。
+
+1. **設定ファイルの準備**
+   ```bash
+   cp configuration_files/config.sample.yaml configuration_files/config.yaml
+   ```
+   `configuration_files/config.yaml` を編集し、`api_endpoint` や `api_key` を設定してください。
+
+2. **ビルドと起動**
+   ```bash
+   docker-compose build
+   docker-compose up
+   ```
+
+### オプション2: 既存のROS環境で使用する場合
+
+1. **依存関係のインストール**
+   ```bash
+   # Python 2.7用のrequestsライブラリをインストール
+   sudo apt-get update
+   sudo apt-get install python-pip
+   pip install requests
+   ```
+
+2. ** ROSパッケージへの追加**
+   ```bash
+   # scriptsディレクトリにファイルを配置
+   cd ~/catkin_ws/src/lightrover_ros/scripts/
+   # Pythonファイルのコピーと実行権限付与
+   chmod +x lidar_api_publisher.py lidar_api_publisher_lite.py
+
+   # launchディレクトリにファイルを配置
+   cd ~/catkin_ws/src/lightrover_ros/launch/
+   # launchファイルをコピー
+   
+   # configuration_filesの配置
+   # lightrover_ros/configuration_files/config.yaml を作成
+   ```
+
+3. **ビルド**
+   ```bash
+   cd ~/catkin_ws
+   catkin_make
+   ```
+
+## AWS APIのデプロイ
+
+AWS SAMを使用してAPI Gateway + Lambda + DynamoDBのバックエンドを構築します。
 
 ```bash
-# scriptsディレクトリにファイルを配置
-cd ~/catkin_ws/src/lightrover_ros/scripts/
-# lidar_api_publisher.pyをコピー
-
-# 実行権限を付与
-chmod +x lidar_api_publisher.py
-
-# launchディレクトリにファイルを配置
-cd ~/catkin_ws/src/lightrover_ros/launch/
-# lidar_api_publisher.launch と lidar_with_api.launch をコピー
-
-# ビルド
-cd ~/catkin_ws
-catkin_make
-```
-
-### 2. AWS APIのデプロイ
-
-#### Option A: AWS SAMを使用する場合
-
-```bash
-# SAM CLIのインストール（初回のみ）
-pip install aws-sam-cli
-
-# デプロイ
 cd aws/
 sam build
 sam deploy --guided
-
-# 出力されたAPIエンドポイントURLをメモ
-# 例: https://xxxxxxxxxx.execute-api.ap-northeast-1.amazonaws.com/prod/api/lidar
 ```
 
-#### Option B: 手動でセットアップする場合
+デプロイが完了すると、API Keyが生成されますが、セキュリティの観点から画面には表示されない場合があります。
+AWSコンソールの「API Gateway」→「APIキー」、または以下のコマンドで確認し、`configuration_files/config.yaml` に設定してください。
 
-1. **DynamoDBテーブルの作成**
-   - テーブル名: `LidarData`
-   - パーティションキー: `id` (String)
-   - GSI: `robot_id` (Hash), `timestamp` (Range)
-
-2. **Lambda関数の作成**
-   - ランタイム: Python 3.9
-   - `lambda_handler.py` のコードをコピー
-   - DynamoDBへのアクセス権限を付与
-
-3. **API Gatewayの設定**
-   - REST APIを作成
-   - POST /api/lidar エンドポイントを作成
-   - Lambdaと統合
-
-### 3. launchファイルの設定
-
-`lidar_with_api.launch` を編集し、APIエンドポイントを設定：
-
-```xml
-<param name="api_endpoint" type="string" value="https://your-actual-endpoint.com/api/lidar" />
+```bash
+# 生成されたAPI Keyの値を確認
+aws apigateway get-api-keys --include-values
 ```
 
-その他のパラメータ：
-- `publish_rate`: データ送信頻度（Hz）デフォルト: 1.0
-- `api_timeout`: APIタイムアウト（秒）デフォルト: 5.0
-- `robot_id`: ロボット識別ID デフォルト: "lightrover_01"
 
-## 使用方法
+## 使用方法（ROS環境）
 
-### パターン1: LiDARとAPI送信を同時起動
+### LiDARとAPI送信を同時起動
 
 ```bash
 roslaunch lightrover_ros lidar_with_api.launch
 ```
 
-### パターン2: API送信ノードのみを起動（LiDARは別途起動済み）
+※ 設定は `configuration_files/config.yaml` から自動的に読み込まれます。
+
+### API送信ノードのみを起動
 
 ```bash
-# 別ターミナルでLiDARを起動
-roslaunch lightrover_ros gmapping.launch
-
-# API送信ノードを起動
 roslaunch lightrover_ros lidar_api_publisher.launch
 ```
 
-### パターン3: パラメータを指定して起動
+## 設定ファイル (config.yaml)
 
-```bash
-roslaunch lightrover_ros lidar_api_publisher.launch \
-  api_endpoint:=https://your-api.com/lidar \
-  publish_rate:=2.0 \
-  robot_id:=robot_abc123
-```
+```yaml
+# API設定
+api_endpoint: "https://your-api.com/lidar"
+api_key: "your-api-key"
 
-## データフォーマット
+# 送信設定
+publish_rate: 1.0  # 1秒に1回
+api_timeout: 5.0
 
-### 送信されるJSON形式
-
-```json
-{
-  "robot_id": "lightrover_01",
-  "timestamp": 1234567890.123,
-  "frame_id": "lidar_link",
-  "scan_data": {
-    "angle_min": -3.14159,
-    "angle_max": 3.14159,
-    "angle_increment": 0.0174533,
-    "time_increment": 0.0001,
-    "scan_time": 0.1,
-    "range_min": 0.1,
-    "range_max": 12.0,
-    "ranges": [1.5, 1.6, 1.7, ...],
-    "intensities": [100, 105, 110, ...]
-  }
-}
+# ロボット設定
+robot_id: "lightrover_01"
 ```
 
 ## トラブルシューティング
 
-### LiDARデータが送信されない
+### データが送信されない
+- `rostopic list` で `/scan` が出ているか確認
+- Dockerの場合、ホスト側で `roscore` が動いているか、ネットワーク設定を確認（`network_mode: host` 推奨）
+- `configuration_files/config.yaml` のエンドポイント設定を確認
 
-```bash
-# LiDARトピックが配信されているか確認
-rostopic list | grep scan
-rostopic echo /scan -n 1
+### APIエラー (400 Bad Request / 500 Internal Server Error)
+- `verify_json_fix.py` を実行してJSONシリアライズに問題がないか確認
+- AWS CloudWatch Logs でLambdaのエラーログを確認
 
-# ノードが起動しているか確認
-rosnode list | grep lidar_api_publisher
-
-# ログを確認
-rosnode info /lidar_api_publisher
-```
-
-### API接続エラー
-
-```bash
-# ログを確認
-roslaunch lightrover_ros lidar_api_publisher.launch --screen
-
-# 手動でAPIテスト
-curl -X POST https://your-api-endpoint.com/api/lidar \
-  -H "Content-Type: application/json" \
-  -d '{"robot_id":"test","timestamp":123,"scan_data":{}}'
-```
-
-### DynamoDBにデータが保存されない
-
-```bash
-# AWS CLIでテーブルを確認
-aws dynamodb describe-table --table-name LidarData
-
-# Lambda関数のログを確認
-aws logs tail /aws/lambda/LidarDataFunction --follow
-```
-
-## パフォーマンスチューニング
-
-### データ送信頻度の調整
-
-LiDARは通常10Hzでスキャンしますが、すべてのデータを送信すると帯域幅を圧迫する可能性があります。
-
-```xml
-<!-- 1秒に1回送信（推奨） -->
-<param name="publish_rate" type="double" value="1.0" />
-
-<!-- 5秒に1回送信（低頻度） -->
-<param name="publish_rate" type="double" value="0.2" />
-
-<!-- 2秒に1回送信 -->
-<param name="publish_rate" type="double" value="0.5" />
-```
-
-### データサイズの削減
-
-大量のrangesデータを送信する場合、以下の最適化を検討してください：
-
-1. **間引き**: 角度分解能を下げる
-2. **圧縮**: データを圧縮してから送信
-3. **差分送信**: 変化があった部分のみ送信
-
-## AWS コスト見積もり
-
-1秒に1回のペースでLiDARデータを送信する場合：
-
-- **API Gateway**: 約260万リクエスト/月 → 約$9/月
-- **Lambda**: 実行回数と実行時間による → 約$1-3/月
-- **DynamoDB**: ストレージと読み書き容量による → 約$5-20/月（データ保持期間に依存）
-
-**TTL設定推奨**: 古いデータを自動削除してコストを削減
-
-## セキュリティ
-
-### 本番環境での推奨事項
-
-1. **API認証の追加**
-   - API KeyまたはIAM認証を使用
-   - `lidar_api_publisher.py`にヘッダー追加
-
-2. **データ暗号化**
-   - HTTPSを使用（デフォルト）
-   - DynamoDBの暗号化を有効化
-
-3. **ネットワークセキュリティ**
-   - VPC内にLambdaを配置
-   - セキュリティグループで送信元を制限
+### "inf" や "nan" の扱い
+- 本パッケージでは、JSON規格違反を防ぐため、`inf` は最大距離に、`nan` は 0 に自動的に置換してから送信します。
 
 ## ライセンス
 
 MIT License
-
-## 参考リンク
-
-- [ライトローバー製品ページ](https://www.vstone.co.jp/products/lightrover/index.html)
-- [ROS sensor_msgs/LaserScan](http://docs.ros.org/api/sensor_msgs/html/msg/LaserScan.html)
-- [AWS SAM Documentation](https://docs.aws.amazon.com/serverless-application-model/)

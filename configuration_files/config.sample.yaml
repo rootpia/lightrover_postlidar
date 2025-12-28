@@ -1,0 +1,18 @@
+# LIDAR API Publisher Configuration (Sample)
+# このファイルを config.yaml にコピーして使用してください
+
+# API設定
+api_endpoint: "https://your-api-endpoint.com/api/lidar"
+api_key: "YOUR_API_KEY_HERE"
+
+# 送信設定
+publish_rate: 1.0  # Hz (1秒に1回)
+api_timeout: 5.0   # 秒
+
+# ロボット設定
+robot_id: "lightrover_01"
+
+# データ削減設定 (Lite版のみ有効)
+angle_resolution: 10  # 度単位 (10度刻みでデータを間引く)
+send_intensities: false
+max_range_only: false

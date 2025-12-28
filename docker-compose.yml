@@ -1,0 +1,12 @@
+version: '3'
+
+services:
+  lidar_publisher:
+    build: .
+    volumes:
+      - ./:/catkin_ws/src/lightrover_postlidar
+    working_dir: /catkin_ws/src/lightrover_postlidar/scripts
+    environment:
+      - ROS_MASTER_URI=http://roscore:11311
+      - ROS_HOSTNAME=lidar_publisher
+    command: /bin/bash -c "source /opt/ros/melodic/setup.bash && python lidar_api_publisher.py"

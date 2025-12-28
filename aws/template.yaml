@@ -20,13 +20,15 @@ Resources:
         AllowMethods: "'POST, GET, OPTIONS'"
         AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
         AllowOrigin: "'*'"
+      Auth:
+        ApiKeyRequired: true # API Keyを必須にする
 
   # Lambda関数
   LidarDataFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: ./
-      Handler: lambda_handler.lambda_handler
+      Handler: aws_lambda_handler.lambda_handler
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref LidarDataTable
@@ -43,6 +45,32 @@ Resources:
             RestApiId: !Ref LidarApi
             Path: /api/lidar/{robot_id}
             Method: GET
+
+
+  # API Key & Usage Plan
+  LidarApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    Properties: 
+      Name: LidarRobotKey
+      Enabled: true
+      StageKeys:
+        - RestApiId: !Ref LidarApi
+          StageName: prod
+
+  LidarApiUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    Properties:
+      UsagePlanName: LidarUsagePlan
+      ApiStages:
+        - ApiId: !Ref LidarApi
+          Stage: prod
+
+  LidarApiUsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId: !Ref LidarApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref LidarApiUsagePlan
 
   # DynamoDBテーブル
   LidarDataTable:

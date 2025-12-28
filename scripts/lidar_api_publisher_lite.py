@@ -12,6 +12,7 @@ import requests
 import json
 import time
 import math
+import threading
 
 class LidarApiPublisherLite:
     def __init__(self):
@@ -19,6 +20,7 @@ class LidarApiPublisherLite:
         
         # パラメータの取得
         self.api_endpoint = rospy.get_param('~api_endpoint', 'https://your-api-endpoint.com/lidar')
+        self.api_key = rospy.get_param('~api_key', '')
         self.publish_rate = rospy.get_param('~publish_rate', 1.0)  # Hz
         self.api_timeout = rospy.get_param('~api_timeout', 5.0)  # seconds
         self.robot_id = rospy.get_param('~robot_id', 'lightrover_01')
@@ -31,6 +33,9 @@ class LidarApiPublisherLite:
         # 最新のLiDARデータを保持
         self.latest_scan = None
         self.last_publish_time = 0
+        
+        # スレッド管理
+        self.upload_thread = None
         
         # LaserScanのサブスクライバー
         rospy.Subscriber('/scan', LaserScan, self.scan_callback)
@@ -50,19 +55,31 @@ class LidarApiPublisherLite:
         if current_time - self.last_publish_time < (1.0 / self.publish_rate):
             return
         
+        # 前回の送信がまだ終わっていなければスキップ
+        if self.upload_thread and self.upload_thread.is_alive():
+            rospy.logdebug("Previous upload still in progress, skipping")
+            return
+
         self.last_publish_time = current_time
         
-        # APIにデータを送信
-        self.publish_to_api(data)
+        # Threadで送信処理を実行
+        self.upload_thread = threading.Thread(target=self.publish_to_api, args=(data,))
+        self.upload_thread.daemon = True
+        self.upload_thread.start()
     
     def publish_to_api(self, scan_data):
-        """LiDARデータをAPIにPOST"""
+        """LiDARデータをAPIにPOST (別スレッドで実行)"""
         try:
             # LiDARデータをJSON形式に変換（軽量化版）
             payload = self.create_lite_payload(scan_data)
             
             # APIにPOSTリクエスト
-            headers = {'Content-Type': 'application/json'}
+            headers = {
+                'Content-Type': 'application/json'
+            }
+            if self.api_key:
+                headers['x-api-key'] = self.api_key
+
             response = requests.post(
                 self.api_endpoint,
                 data=json.dumps(payload),
@@ -136,8 +153,13 @@ class LidarApiPublisherLite:
         
         for i in range(0, len(scan_data.ranges), step):
             angle = scan_data.angle_min + i * scan_data.angle_increment
+            r = scan_data.ranges[i]
+            
+            # サニタイズ
+            r = self._sanitize_float(r, scan_data.range_max)
+            
             thinned_angles.append(round(math.degrees(angle), 2))
-            thinned_ranges.append(round(scan_data.ranges[i], 3))
+            thinned_ranges.append(r)
         
         return thinned_ranges, thinned_angles
     
@@ -148,9 +170,23 @@ class LidarApiPublisherLite:
         
         thinned_intensities = []
         for i in range(0, len(scan_data.intensities), step):
-            thinned_intensities.append(int(scan_data.intensities[i]))
+            val = scan_data.intensities[i]
+            # サニタイズ (optional for int but good for float intensities)
+            val = self._sanitize_float(val, 0)
+            thinned_intensities.append(val)
         
         return thinned_intensities
+
+    def _sanitize_float(self, value, default_value):
+        """inf/nan を安全な値またはNoneに変換"""
+        if isinstance(value, float):
+            if float(value) == float('inf'):
+                return default_value
+            if float(value) == float('-inf'):
+                return 0
+            if value != value: # NaN
+                return 0
+        return value
     
     def run(self):
         """ノードの実行"""

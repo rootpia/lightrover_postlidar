@@ -44,17 +44,8 @@ LiDARドライバとAPI送信ノードを同時起動
 
   <!-- LiDAR API Publisher ノード -->
   <node pkg="lightrover_ros" type="lidar_api_publisher.py" name="lidar_api_publisher" output="screen">
-    <!-- APIエンドポイントの設定（環境に応じて変更してください） -->
-    <param name="api_endpoint" type="string" value="https://your-api-endpoint.com/api/lidar" />
-    
-    <!-- データ送信頻度（Hz）: 1.0 = 1秒に1回 -->
-    <param name="publish_rate" type="double" value="1.0" />
-    
-    <!-- APIタイムアウト（秒） -->
-    <param name="api_timeout" type="double" value="5.0" />
-    
-    <!-- ロボットID -->
-    <param name="robot_id" type="string" value="lightrover_01" />
+    <!-- 設定ファイルからパラメータを読み込む -->
+    <rosparam command="load" file="$(find lightrover_ros)/configuration_files/config.yaml" />
   </node>
 
   <!-- RViz（可視化用、必要に応じてコメントアウト） -->
